@@ -140,19 +140,27 @@ print("F-statistic p-value:", p_value_f)
 print("\nRMS alpha:", rms_alpha)
 print("Average absolute alpha:", avg_abs_alpha)
 
+# Assuming 'results_df' and 'mean_returns' are already defined
+# and that the original 'betas' matrix is stored in 'results_df'
+# with columns ['Beta_Mkt', 'Beta_SMB', 'Beta_HML']
+
 ## Question (e)
 # Part 1.
 ''' Now, run OLS cross-sectional regressions.Run the cross sectional regression with a constant, 
 E (Rei) = λ0 + βiλ + αi. There are standard error etc. formulas for this case, but I’ll spare you programming them up. 
 Report i) Estimates λˆ0,λˆ, ii) Root mean square and mean absolute pricing errors αˆ, and the R2 of actual vs. predicted mean returns.'''
 
-alphas = results_df['Alpha'].values # Vector of alphas 25 portfolios
-X = np.array(results_df['Betas'].tolist()) # Matrix of betas 25x3
+# Load the original betas matrix (without the constant)
+betas = np.array(results_df['Betas'].tolist()) # Matrix of betas 25x3
+
+# Y is the vector of mean returns
 y = mean_returns.values # Vector of mean returns 25 portfolios
-X = sm.add_constant(X) # Add constant term for intercept
-cs_model = sm.OLS(y, X).fit()
-lambda_0 = cs_model.params[0] # Intercept (alpha)
-lambda_1 = cs_model.params[1:] # Coefficients (betas)
+
+# Add constant term for intercept for the first regression
+X_part1 = sm.add_constant(betas)
+cs_model = sm.OLS(y, X_part1).fit()
+lambda_0 = cs_model.params[0] # Intercept (lambda_0)
+lambda_1 = cs_model.params[1:] # Coefficients (lambdas)
 
 # Predicted mean returns
 predicted_returns = cs_model.fittedvalues
@@ -171,16 +179,63 @@ print("RMS pricing error:", rms_alpha)
 print("Mean absolute pricing error:", mean_abs_alpha)
 print("R²:", r2)
 
+print("\n-----------------------------------------\n")
+
 ## Part 2
-y = mean_returns.values # Vector of mean returns 25 portfolios
-factor_means = F_t.mean(axis=0)  # Means of Mkt-RF, SMB, HML
-y_with_factors = np.append(y, factor_means) # Now y_with_factors is 28x1
+''' Run it with no constant, E (Rei) = βiλ + αi, and include the factors (market) as a test asset.'''
+
+# Construct the dependent variable vector (mean returns of portfolios and factors)
+y_with_factors = np.append(y, F_t.mean(axis=0)) # Now y_with_factors is 28x1
+
+# Construct the independent variable matrix (betas of portfolios and factors)
+# IMPORTANT: Use the original betas matrix (25x3), not the one with the constant
 identity_matrix = np.eye(3)
-X_with_id = np.vstack([X, identity_matrix]) # Now X_with_id is 28x3
+X_with_id = np.vstack([betas, identity_matrix]) # Now X_with_id is 28x3
 
+# Run the cross-sectional regression without a constant
 cs_model_v2 = sm.OLS(y_with_factors, X_with_id).fit()
-lambda_0_v2 = cs_model_v2.params[0] # Intercept (alpha)
-lambda_1_v2 = cs_model_v2.params[1:] # Coefficients (betas)
+estimated_lambdas = cs_model_v2.params # The params now directly represent the lambdas (3x1)
 
-# Lets compute the standard errors of lambda and alpha with traditional iid formualas
+# Compute the standard errors of lambda
 lambda_se_v2 = cs_model_v2.bse # Standard errors of lambda
+
+# Compute the standard error of alpha with traditional iid formulas
+# (assuming the required variables T, N, and all_residuals_matrix are defined)
+
+# Step 1: Calculate the covariance matrix of residuals (Sigma)
+residuals_sigma = np.cov(all_residuals_matrix)
+
+# Step 2: Calculate the covariance matrix of factors (Sigma_f)
+factors_sigma = np.cov(F_t.T)
+factors_sigma_inv = np.linalg.inv(factors_sigma)
+
+# Step 3: Calculate the lambda part of the scaling term
+lambda_prime_sigma_f_inv_lambda = estimated_lambdas.T @ factors_sigma_inv @ estimated_lambdas
+
+# Step 4: Compute the core projection matrix
+beta_prime_beta_inv = np.linalg.inv(betas.T @ betas)
+projection_matrix = np.eye(N) - betas @ beta_prime_beta_inv @ betas.T
+
+# Step 5: Compute the covariance matrix of alphas
+cov_alpha = (1/T) * projection_matrix @ residuals_sigma @ projection_matrix * (1 + lambda_prime_sigma_f_inv_lambda)
+
+# Step 6: The standard errors are the square root of the diagonal elements of this matrix
+alpha_se = np.sqrt(np.diag(cov_alpha))
+
+print("Estimated lambdas (no constant):", estimated_lambdas)
+print("Standard errors for the estimated lambdas:", lambda_se_v2)
+print("Standard errors for the pricing errors (alphas):", alpha_se)
+
+# Predicted mean returns
+predicted_returns_v2 = cs_model_v2.fittedvalues
+
+# Pricing errors (alphas_hat)
+pricing_errors_v2 = y_with_factors - predicted_returns_v2
+
+# Diagnostics
+rms_alpha_v2 = np.sqrt(np.mean(pricing_errors_v2**2))
+mean_abs_alpha_v2 = np.mean(np.abs(pricing_errors_v2))
+r2_v2 = cs_model_v2.rsquared
+print("RMS pricing error (no constant):", rms_alpha_v2)
+print("Mean absolute pricing error (no constant):", mean_abs_alpha_v2)
+print("R² (no constant):", r2_v2)

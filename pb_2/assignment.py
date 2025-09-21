@@ -1,6 +1,7 @@
 import pandas as pd 
 import numpy as np 
 from sklearn.linear_model import LinearRegression
+import statsmodels.api as sm
 
 '''Eliminate the data prior to 193201 (i.e. 67:end) to avoid the missing data in the earliest years of the sample. (Make sure you don’t use any -99 data). Subtract the risk free rate rf from the 25 test assets to make them excess returns. The factors are already excess returns.
 '''
@@ -42,18 +43,37 @@ print(mean_returns_matrix)
 Each regressio will use the excess returns of the portfolio as the dependent variable and then the three
 Fama French factors (MKT, SMB, HML) as independent variables. See one note file for more explanations'''
 
+## Question (c)
+'''Find standard errors of αˆ,βˆ,λˆ using classic iid formulas.
+Apparently for αˆ,βˆ are measured by OLS by using the residuals of the regression as a proxy of 
+the amount of noise in the regression and thus the standard errors.
+That being said, those can be retrieved from the linear regression model'''
+
+# Write the code here to retrieve the standard errors of alpha and betas from the regression model
+# Note: sklearn's LinearRegression does not provide standard errors directly. You may need to use statsmodels for that.
+
 F_t = fama_french_factors[['Mkt-RF', 'SMB', 'HML']].values # Prepare independent variables (Fama French factors)
 
 results = []  # Initialize list to store results
+alpha_se = []
+beta_se = []
 
 for portfolio in portfolio_returns.columns:
     y = portfolio_returns[portfolio].values
-    model = LinearRegression().fit(F_t, y)
-    alpha = model.intercept_
-    betas = model.coef_
-    results.append({'Portfolio': portfolio, 'Alpha': alpha, 'Betas': betas})
+    X = sm.add_constant(F_t)  # Add constant term for intercept
+    model = sm.OLS(y, X).fit()
+    alpha = model.params[0]  # Intercept (alpha)
+    betas = model.params[1:]  # Coefficients (betas)
+    results.append({'Portfolio': portfolio, 'Alpha': alpha, 'Betas': betas.values})
+    alpha_se.append(model.bse[0])  # Standard error of alpha
+    beta_se.append(model.bse[1:].values)   # Standard errors of betas
 
 results_df = pd.DataFrame(results) # Convert results to DataFrame
+risk_premia_predicted = F_t.mean(axis=0) # Lets estimate the forecasted risk premia as the average of the factors
+print(risk_premia_predicted)
+
+results_df['Alpha SE'] = alpha_se # Add standard errors to results DataFrame
+for i in range(3):
+    results_df[f'Beta {i+1} SE'] = [beta[i] for beta in beta_se]
+
 print(results_df)
-
-

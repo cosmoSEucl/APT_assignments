@@ -3,6 +3,7 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 import statsmodels.api as sm
 from scipy.stats import chi2, f
+import matplotlib.pyplot as plt
 
 '''Eliminate the data prior to 193201 (i.e. 67:end) to avoid the missing data in the earliest years of the sample. (Make sure you don’t use any -99 data). Subtract the risk free rate rf from the 25 test assets to make them excess returns. The factors are already excess returns.
 '''
@@ -20,6 +21,9 @@ fama_french_factors.set_index('date', inplace=True)
 
 # Eliminate data prior 193201
 portfolio_SBM = portfolio_SBM[portfolio_SBM.index >= '1932-01-01']
+print(portfolio_SBM.head(-5))
+
+
 fama_french_factors = fama_french_factors[fama_french_factors.index >= '1932-01-01']
 # Calculate only excess returns for portfolios
 portfolio_SBM = portfolio_SBM.subtract(fama_french_factors['RF'], axis=0)
@@ -54,7 +58,6 @@ That being said, those can be retrieved from the linear regression model'''
 # Note: sklearn's LinearRegression does not provide standard errors directly. You may need to use statsmodels for that.
 
 F_t = fama_french_factors[['Mkt-RF', 'SMB', 'HML']].values # Prepare independent variables (Fama French factors)
-
 results = [] # Initialize list to store results
 alpha_se = []
 beta_se = []
@@ -93,6 +96,7 @@ alpha_vector = results_df['Alpha'].values # Vector of alphas 25 portfolios
 alpha_matrix = alpha_vector.reshape(-1,1) # Column vector of alphas
 
 all_residuals_matrix = np.array(all_residuals) 
+print(f"THIS IS THE RESIDUALS: {all_residuals_matrix.shape}")
 cov_matrix = np.cov(all_residuals_matrix) # Covariance matrix of residuals
 inv_cov_matrix = np.linalg.inv(cov_matrix)
 
@@ -239,3 +243,40 @@ r2_v2 = cs_model_v2.rsquared
 print("RMS pricing error (no constant):", rms_alpha_v2)
 print("Mean absolute pricing error (no constant):", mean_abs_alpha_v2)
 print("R² (no constant):", r2_v2)
+
+## Question (f) 
+''' Finally, present average returns vs. betas for all three methods. That means you take only the betas from 
+the time series regression with market factor, and plot the average returns of the 25 portfolios.
+And then you add the three regression lines from the three methods'''
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(10, 6))
+
+# Plot portfolios
+market_betas = betas[:, 0]  # Market betas only
+plt.scatter(market_betas, mean_returns.values, color='blue', label='25 Portfolios')
+
+# Plot market factor as test asset
+plt.scatter(1.0, F_t[:, 0].mean(), color='red', s=100, marker='s', label='Market Factor')
+
+# Create beta range for lines
+beta_range = np.linspace(0, max(market_betas), 100)
+
+# Method 1: Time-series (theoretical CAPM line)
+ts_line = F_t[:, 0].mean() * beta_range
+plt.plot(beta_range, ts_line, 'r--', label='Time-series')
+
+# Method 2: Cross-sectional with constant
+cs_line_with_const = lambda_0 + lambda_1[0] * beta_range
+plt.plot(beta_range, cs_line_with_const, 'g-', label='Cross-sectional (with constant)')
+
+# Method 3: Cross-sectional without constant
+cs_line_no_const = estimated_lambdas[0] * beta_range
+plt.plot(beta_range, cs_line_no_const, 'orange', linestyle='-.', label='Cross-sectional (no constant)')
+
+plt.xlabel('Market Beta')
+plt.ylabel('Average Excess Return')
+plt.title('Average Returns vs. Market Betas')
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.show()
